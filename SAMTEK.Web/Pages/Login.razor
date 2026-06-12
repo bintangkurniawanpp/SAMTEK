@@ -1,0 +1,135 @@
+﻿@page "/login"
+@layout LoginLayout
+@using SAMTEK.Application.Interfaces
+@using SAMTEK.Application.DTOs
+@inject IIdentityProvider IdentityProvider
+@inject IMappingService MappingService
+@inject IAuditService AuditService
+@inject IConfiguration Config
+@inject IHttpClientFactory HttpClientFactory
+@inject NavigationManager Nav
+@inject ILogger<Login> Logger
+
+<div class="login-card card p-4">
+    <div class="text-center mb-4">
+        <div class="login-brand">SAMTEK</div>
+        <div class="login-sub">System Auth Management Technology</div>
+    </div>
+
+    @if (errorMsg != null)
+    {
+        <div class="alert alert-danger py-2">@errorMsg</div>
+    }
+
+    <EditForm Model="form" OnValidSubmit="HandleLogin">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Username</label>
+            <InputText class="form-control" @bind-Value="form.Username" placeholder="username IdAMan" autocomplete="username" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Password</label>
+            <InputText type="password" class="form-control" @bind-Value="form.Password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <button class="btn btn-primary w-100 mb-3" type="submit" disabled="@loading">
+            @(loading ? "Memproses…" : "Masuk")
+        </button>
+    </EditForm>
+
+    <hr class="my-2" />
+    <div class="text-center">
+        <a href="/admin-login" class="text-muted small">Login sebagai Admin SAMTEK</a>
+    </div>
+</div>
+
+@code {
+    private LoginRequestDto form = new();
+    private string? errorMsg;
+    private bool loading;
+
+    private async Task HandleLogin()
+    {
+        errorMsg = null;
+        loading = true;
+        try
+        {
+            var auth = await IdentityProvider.AuthenticateAsync(form.Username, form.Password);
+            if (!auth.Success)
+            {
+                errorMsg = auth.ErrorMessage ?? "Username atau password salah.";
+                return;
+            }
+
+            var credentials = await MappingService.GetCredentialsAsync(auth.Username!);
+            if (credentials == null)
+            {
+                Nav.NavigateTo("/no-access");
+                return;
+            }
+
+            // Decode plaintext password (stored as base64 in UserCredentialsDto)
+            var appaPassword = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(credentials.ArisPasswordBase64));
+
+            // Call APPA login API to get APPA token
+            var appaResult = await GetAppaLoginAsync(credentials.ArisUsername, appaPassword);
+            if (appaResult == null)
+            {
+                errorMsg = "Gagal terhubung ke APPA. Hubungi administrator.";
+                return;
+            }
+
+            var appaFrontendUrl = Config["Appa:FrontendUrl"] ?? "http://localhost:3000";
+            var userB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(appaResult.Value.UserJson));
+            Nav.NavigateTo(
+                $"{appaFrontendUrl}?token={Uri.EscapeDataString(appaResult.Value.Token)}&user={Uri.EscapeDataString(userB64)}",
+                forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Login error for {Username}", form.Username);
+            errorMsg = "Terjadi kesalahan. Silakan coba lagi.";
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task<(string Token, string UserJson)?> GetAppaLoginAsync(string username, string password)
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient("appa");
+            var resp = await client.PostAsJsonAsync("/api/auth/login", new { username, password });
+            var json = await resp.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+
+            if (!json.TryGetProperty("success", out var s) || !s.GetBoolean()) return null;
+
+            if (!json.TryGetProperty("token", out var tokenEl)) return null;
+            var token = tokenEl.GetString();
+            if (string.IsNullOrEmpty(token)) return null;
+
+            // Build safe user object (strip passwordHash)
+            string userJson = "{}";
+            if (json.TryGetProperty("user", out var u) && u.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                userJson = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    id          = u.TryGetProperty("id", out var id) ? id.GetInt32() : 0,
+                    username    = u.TryGetProperty("username", out var un) ? un.GetString() : "",
+                    email       = u.TryGetProperty("email", out var em) ? em.GetString() : "",
+                    roleId      = u.TryGetProperty("roleId", out var ri) ? ri.GetInt32() : 0,
+                    roleName    = u.TryGetProperty("roleName", out var rn) ? rn.GetString() : "",
+                    status      = u.TryGetProperty("status", out var st) ? st.GetInt32() : 0,
+                });
+            }
+
+            return (token, userJson);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "APPA API call failed");
+        }
+        return null;
+    }
+}

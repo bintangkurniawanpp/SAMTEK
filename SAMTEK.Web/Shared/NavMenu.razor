@@ -1,0 +1,43 @@
+﻿@using SAMTEK.Web.Services
+@inject SamtekSession Session
+@inject NavigationManager Nav
+
+<div class="top-row pl-4 navbar navbar-dark">
+    <a class="navbar-brand" href="/admin/mappings">SAMTEK Admin</a>
+    <button class="navbar-toggler" @onclick="ToggleNavMenu">
+        <span class="navbar-toggler-icon"></span>
+    </button>
+</div>
+
+<div class="@NavMenuCssClass" @onclick="ToggleNavMenu">
+    <ul class="nav flex-column">
+        <li class="nav-item px-3">
+            <NavLink class="nav-link" href="admin/mappings">
+                <span class="oi oi-people" aria-hidden="true"></span> User Mappings
+            </NavLink>
+        </li>
+        <li class="nav-item px-3">
+            <NavLink class="nav-link" href="admin/aris-roles">
+                <span class="oi oi-key" aria-hidden="true"></span> ARIS Roles
+            </NavLink>
+        </li>
+        <li class="nav-item px-3 mt-auto">
+            <button class="nav-link btn btn-link text-start w-100" @onclick="Logout">
+                <span class="oi oi-account-logout" aria-hidden="true"></span> Logout (@(Session.AdminUsername ?? "admin"))
+            </button>
+        </li>
+    </ul>
+</div>
+
+@code {
+    private bool collapseNavMenu = true;
+    private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
+
+    private void ToggleNavMenu() => collapseNavMenu = !collapseNavMenu;
+
+    private void Logout()
+    {
+        Session.ClearAdmin();
+        Nav.NavigateTo("/admin-login");
+    }
+}

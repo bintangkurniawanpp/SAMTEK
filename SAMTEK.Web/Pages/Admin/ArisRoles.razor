@@ -1,0 +1,182 @@
+﻿@page "/admin/aris-roles"
+@using SAMTEK.Domain.Entities
+@using SAMTEK.Infrastructure.Persistence
+@using SAMTEK.Web.Services
+@using Microsoft.EntityFrameworkCore
+@using BCrypt.Net
+@inject SamtekDbContext Db
+@inject SamtekSession Session
+@inject NavigationManager Nav
+
+<PageTitle>Shared Roles — SAMTEK Admin</PageTitle>
+
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-0">Shared Role Accounts</h2>
+            <small class="text-muted">Credentials shared account Designer/Viewer untuk ARIS dan APPA</small>
+        </div>
+        <button class="btn btn-primary" @onclick="() => showModal = true">+ Add Role</button>
+    </div>
+
+    @if (msg != null)
+    {
+        <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible">
+            @msg <button class="btn-close" @onclick="() => msg = null" />
+        </div>
+    }
+
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Code</th>
+                        <th>Username (ARIS & APPA)</th>
+                        <th>Type</th>
+                        <th>Print</th>
+                        <th>Download</th>
+                        <th>Active</th>
+                        <th>Users</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (roles == null)
+                    {
+                        <tr><td colspan="8" class="text-center py-4"><em>Loading…</em></td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var r in roles)
+                        {
+                            <tr>
+                                <td><strong>@r.RoleCode</strong></td>
+                                <td><code>@r.ArisUsername</code></td>
+                                <td><span class="badge @(r.RoleType == "Designer" ? "bg-primary" : "bg-info text-dark")">@r.RoleType</span></td>
+                                <td>@(r.CanPrint ? "✓" : "–")</td>
+                                <td>@(r.CanDownload ? "✓" : "–")</td>
+                                <td>@(r.IsActive ? "✓" : "–")</td>
+                                <td>@r.UserMappings.Count</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(r.Id)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="modal d-block" style="background:rgba(0,0,0,.4)">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Shared Role</h5>
+                    <button class="btn-close" @onclick="() => showModal = false" />
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Role Code</label>
+                        <input class="form-control" @bind="roleCode" placeholder="e.g. DESIGNER" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Username <span class="text-muted fw-normal">(shared account ARIS & APPA)</span></label>
+                        <input class="form-control" @bind="arisUsername" placeholder="username shared account" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Password <span class="text-muted fw-normal">(shared account ARIS & APPA)</span></label>
+                        <input type="password" class="form-control" @bind="arisPassword" />
+                        <small class="text-muted">Credentials ini digunakan untuk auto-login ke ARIS dan APPA.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Role Type</label>
+                        <select class="form-select" @bind="roleType">
+                            <option value="Viewer">Viewer</option>
+                            <option value="Designer">Designer</option>
+                        </select>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" @bind="canPrint" id="chkPrint" />
+                        <label class="form-check-label" for="chkPrint">Can Print</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" @bind="canDownload" id="chkDl" />
+                        <label class="form-check-label" for="chkDl">Can Download</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="() => showModal = false">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveAsync" disabled="@saving">
+                        @(saving ? "Saving…" : "Save")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ArisRole>? roles;
+    private bool showModal, saving, isError;
+    private string? msg;
+    private string roleCode = "", arisUsername = "", arisPassword = "", roleType = "Viewer";
+    private bool canPrint, canDownload;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsAdminAuthenticated)
+        {
+            Nav.NavigateTo("/admin-login");
+            return;
+        }
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        roles = await Db.ArisRoles.Include(r => r.UserMappings).OrderBy(r => r.RoleCode).ToListAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(roleCode) || string.IsNullOrWhiteSpace(arisUsername) || string.IsNullOrWhiteSpace(arisPassword))
+        {
+            msg = "All fields are required."; isError = true; return;
+        }
+        saving = true;
+        try
+        {
+            Db.ArisRoles.Add(new ArisRole
+            {
+                RoleCode = roleCode.Trim().ToUpperInvariant(),
+                ArisUsername = arisUsername.Trim(),
+                ArisPasswordHash = arisPassword, // stored plaintext for ARIS auth (see MappingService)
+                RoleType = roleType,
+                CanPrint = canPrint,
+                CanDownload = canDownload,
+                IsActive = true,
+            });
+            await Db.SaveChangesAsync();
+            msg = "Role added."; isError = false;
+            showModal = false;
+            roleCode = arisUsername = arisPassword = "";
+            await LoadAsync();
+        }
+        catch (Exception ex) { msg = ex.Message; isError = true; }
+        finally { saving = false; }
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        var role = await Db.ArisRoles.FindAsync(id);
+        if (role == null) return;
+        Db.ArisRoles.Remove(role);
+        await Db.SaveChangesAsync();
+        await LoadAsync();
+    }
+}

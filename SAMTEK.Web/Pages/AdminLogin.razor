@@ -1,0 +1,74 @@
+﻿@page "/admin-login"
+@layout LoginLayout
+@using SAMTEK.Application.Interfaces
+@using SAMTEK.Web.Services
+@inject IAdminAuthService AdminAuth
+@inject SamtekSession Session
+@inject NavigationManager Nav
+
+<div class="login-card card p-4">
+    <div class="text-center mb-4">
+        <div class="login-brand">SAMTEK Admin</div>
+        <div class="login-sub">Login admin untuk manajemen role mapping</div>
+    </div>
+
+    @if (errorMsg != null)
+    {
+        <div class="alert alert-danger py-2">@errorMsg</div>
+    }
+
+    <EditForm Model="form" OnValidSubmit="HandleLogin">
+        <DataAnnotationsValidator />
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Username Admin</label>
+            <InputText class="form-control" @bind-Value="form.Username" placeholder="admin" autocomplete="username" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Password</label>
+            <InputText type="password" class="form-control" @bind-Value="form.Password" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <button class="btn btn-dark w-100 mb-3" type="submit" disabled="@loading">
+            @(loading ? "Memproses…" : "Masuk sebagai Admin")
+        </button>
+    </EditForm>
+
+    <hr class="my-2" />
+    <div class="text-center">
+        <a href="/login" class="text-muted small">← Kembali ke login user</a>
+    </div>
+</div>
+
+@code {
+    private LoginForm form = new();
+    private string? errorMsg;
+    private bool loading;
+
+    private async Task HandleLogin()
+    {
+        errorMsg = null;
+        loading = true;
+        try
+        {
+            var ok = await AdminAuth.AuthenticateAsync(form.Username, form.Password);
+            if (!ok)
+            {
+                errorMsg = "Username atau password admin salah.";
+                return;
+            }
+
+            Session.IsAdminAuthenticated = true;
+            Session.AdminUsername = form.Username.ToLowerInvariant();
+            Nav.NavigateTo("/admin/mappings");
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private class LoginForm
+    {
+        public string Username { get; set; } = "";
+        public string Password { get; set; } = "";
+    }
+}
