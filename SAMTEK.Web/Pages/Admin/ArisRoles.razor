@@ -127,14 +127,16 @@
     private string roleCode = "", arisUsername = "", arisPassword = "", roleType = "Viewer";
     private bool canPrint, canDownload;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
         if (!Session.IsAdminAuthenticated)
         {
-            Nav.NavigateTo("/admin-login");
+            Nav.NavigateTo("/admin-login", forceLoad: false);
             return;
         }
         await LoadAsync();
+        StateHasChanged();
     }
 
     private async Task LoadAsync()
@@ -173,10 +175,18 @@
 
     private async Task DeleteAsync(int id)
     {
-        var role = await Db.ArisRoles.FindAsync(id);
-        if (role == null) return;
-        Db.ArisRoles.Remove(role);
-        await Db.SaveChangesAsync();
-        await LoadAsync();
+        try
+        {
+            var role = await Db.ArisRoles.Include(r => r.UserMappings).FirstOrDefaultAsync(r => r.Id == id);
+            if (role == null) return;
+
+            // Remove linked user mappings first to avoid FK constraint
+            Db.UserRoleMappings.RemoveRange(role.UserMappings);
+            Db.ArisRoles.Remove(role);
+            await Db.SaveChangesAsync();
+            msg = "Role deleted."; isError = false;
+            await LoadAsync();
+        }
+        catch (Exception ex) { msg = ex.Message; isError = true; }
     }
 }

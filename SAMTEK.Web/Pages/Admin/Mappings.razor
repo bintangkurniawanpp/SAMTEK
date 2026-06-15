@@ -153,14 +153,16 @@
     private string? successMsg;
     private AssignRoleDto form = new();
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (!firstRender) return;
         if (!Session.IsAdminAuthenticated)
         {
-            Nav.NavigateTo("/admin-login");
+            Nav.NavigateTo("/admin-login", forceLoad: false);
             return;
         }
         await LoadAsync();
+        StateHasChanged();
     }
 
     private async Task LoadAsync()

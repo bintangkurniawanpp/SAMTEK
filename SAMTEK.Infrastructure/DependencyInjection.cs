@@ -19,7 +19,7 @@ public static class DependencyInjection
         services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IAdminAuthService, AdminAuthService>();
 
-        // Identity provider — swap to LdapIdentityProvider when LDAP/IdAMan details are known
+        // Identity provider: set IdentityProvider:Type to "Ldap", "Keycloak", or "Mock"
         var providerType = config["IdentityProvider:Type"] ?? "Mock";
         if (providerType == "Ldap")
         {
@@ -34,6 +34,12 @@ public static class DependencyInjection
                 o.TimeoutSeconds = int.TryParse(config["Ldap:TimeoutSeconds"], out var t) ? t : 10;
             });
             services.AddScoped<IIdentityProvider, LdapIdentityProvider>();
+        }
+        else if (providerType == "Keycloak")
+        {
+            services.Configure<KeycloakSettings>(config.GetSection("Keycloak"));
+            services.AddHttpClient("keycloak");
+            services.AddScoped<IIdentityProvider, KeycloakIdentityProvider>();
         }
         else
         {
