@@ -80,8 +80,14 @@
 
             var appaFrontendUrl = Config["Appa:FrontendUrl"] ?? "http://localhost:3000";
             var userB64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(appaResult.Value.UserJson));
+            var arisUserB64 = Convert.ToBase64String(
+                System.Text.Encoding.UTF8.GetBytes(credentials.ArisUsername));
             Nav.NavigateTo(
-                $"{appaFrontendUrl}?token={Uri.EscapeDataString(appaResult.Value.Token)}&user={Uri.EscapeDataString(userB64)}",
+                $"{appaFrontendUrl}" +
+                $"?token={Uri.EscapeDataString(appaResult.Value.Token)}" +
+                $"&user={Uri.EscapeDataString(userB64)}" +
+                $"&aris_user={Uri.EscapeDataString(arisUserB64)}" +
+                $"&aris_pwd={Uri.EscapeDataString(credentials.ArisPasswordBase64)}",
                 forceLoad: true);
         }
         catch (Exception ex)
